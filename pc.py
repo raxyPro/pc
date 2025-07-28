@@ -96,9 +96,24 @@ def get_gpu_info():
     except Exception:
         # Unable to detect AMD GPU on this system or lspci not available
         pass
+def print_cpu_clock_speed():
+    freq = psutil.cpu_freq()
+    if freq:
+        print(f"CPU Frequency: Current = {freq.current:.2f} MHz, Min = {freq.min:.2f} MHz, Max = {freq.max:.2f} MHz")
+    else:
+        print("CPU frequency information not available.")
+
+    # For per-core frequency (if supported)
+    freqs = psutil.cpu_freq(percpu=True)
+    if freqs:
+        for idx, core_freq in enumerate(freqs):
+            print(f"Core {idx}: {core_freq.current:.2f} MHz")
+    else:
+        print("Per-core CPU frequency information not available.")
 
 def main():
     get_cpu_info()
+    print_cpu_clock_speed()
     get_memory_info()
     get_cpu_usage()
     test_disk_speed()
