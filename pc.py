@@ -2,121 +2,159 @@ import platform
 import psutil
 import time
 import os
+import subprocess
 
+# Optional modules
+try:
+    import cpuinfo
+except ImportError:
+    cpuinfo = None
+
+try:
+    import GPUtil
+except ImportError:
+    GPUtil = None
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
+# ======== CPU Info =========
 def get_cpu_info():
-    """Get and print CPU-related information."""
     print("=== CPU Information ===")
+    if cpuinfo:
+        info = cpuinfo.get_cpu_info()
+        print(f"Brand: {info.get('brand_raw')}")
+    print(f"Architecture: {platform.machine()}")
     print(f"Processor: {platform.processor()}")
-    print(f"Machine Type: {platform.machine()}")
-    print(f"CPU Cores (Logical): {psutil.cpu_count(logical=True)}")
-    print(f"CPU Cores (Physical): {psutil.cpu_count(logical=False)}")
+    print(f"Physical Cores: {psutil.cpu_count(logical=False)}")
+    print(f"Logical Cores: {psutil.cpu_count(logical=True)}")
+
     freq = psutil.cpu_freq()
     if freq:
-        print(f"CPU Frequency: {freq.current:.2f} MHz")
-    else:
-        print("CPU Frequency: Not available")
+        print(f"CPU Frequency: Current = {freq.current:.2f} MHz, Min = {freq.min:.2f} MHz, Max = {freq.max:.2f} MHz")
 
-def get_memory_info():
-    """Get and print RAM information."""
+    print("CPU Usage per Core:")
+    for idx, usage in enumerate(psutil.cpu_percent(percpu=True, interval=1)):
+        print(f"  Core {idx}: {usage}%")
+    print(f"Total CPU Usage: {psutil.cpu_percent()}%")
+
+# ======== RAM Info =========
+def get_ram_info():
     print("\n=== Memory Information ===")
-    mem = psutil.virtual_memory()
-    print(f"Total RAM: {mem.total / (1024 ** 3):.2f} GB")
-    print(f"Available RAM: {mem.available / (1024 ** 3):.2f} GB")
+    vm = psutil.virtual_memory()
+    print(f"Total RAM: {vm.total / (1024 ** 3):.2f} GB")
+    print(f"Available RAM: {vm.available / (1024 ** 3):.2f} GB")
+    print(f"Used RAM: {vm.used / (1024 ** 3):.2f} GB")
+    print(f"RAM Usage: {vm.percent}%")
+    print(f"RAM Speed: {get_ram_speed()} MHz")
 
-def get_cpu_usage(duration=3):
-    """Print current CPU usage percentage over a time interval."""
-    print("\n=== CPU Usage ===")
-    usage = psutil.cpu_percent(interval=duration)
-    print(f"CPU Usage over {duration} seconds: {usage}%")
+def get_ram_speed():
+    try:
+        if platform.system() == "Windows":
+            import wmi
+            w = wmi.WMI()
+            for mem in w.Win32_PhysicalMemory():
+                return int(mem.Speed)
+        elif platform.system() == "Linux":
+            result = subprocess.check_output("sudo dmidecode -t memory", shell=True, text=True)
+            for line in result.splitlines():
+                if "Speed:" in line and "Configured" not in line:
+                    return int(line.split(":")[1].strip().split()[0])
+    except Exception:
+        return "Unavailable"
+    return "Unavailable"
 
+# ======== Swap Info =========
+def get_swap_info():
+    print("\n=== Swap Memory ===")
+    swap = psutil.swap_memory()
+    print(f"Total Swap: {swap.total / (1024 ** 3):.2f} GB")
+    print(f"Used Swap: {swap.used / (1024 ** 3):.2f} GB")
+    print(f"Free Swap: {swap.free / (1024 ** 3):.2f} GB")
+    print(f"Swap Usage: {swap.percent}%")
+
+# ======== Disk Info =========
 def test_disk_speed(file_name="testfile.tmp", size_mb=100):
-    """Test disk read/write speed using a temporary file."""
     print("\n=== Disk Speed Test ===")
-    buf = os.urandom(1024 * 1024)  # 1 MB buffer
-    
-    # Write test
+    buf = os.urandom(1024 * 1024)
+
     start_time = time.time()
     with open(file_name, 'wb') as f:
         for _ in range(size_mb):
             f.write(buf)
     write_duration = time.time() - start_time
-    
-    # Read test
+
     start_time = time.time()
     with open(file_name, 'rb') as f:
         for _ in range(size_mb):
             f.read(1024 * 1024)
     read_duration = time.time() - start_time
-    
-    # Clean up test file
+
     os.remove(file_name)
-    
-    write_speed = size_mb / write_duration
-    read_speed = size_mb / read_duration
-    
-    print(f"Disk Write Speed: {write_speed:.2f} MB/s")
-    print(f"Disk Read Speed: {read_speed:.2f} MB/s")
+    print(f"Write Speed: {size_mb / write_duration:.2f} MB/s")
+    print(f"Read Speed: {size_mb / read_duration:.2f} MB/s")
 
+def get_disk_io():
+    print("\n=== Disk I/O Counters ===")
+    io = psutil.disk_io_counters()
+    print(f"Total Read: {io.read_bytes / (1024 ** 3):.2f} GB")
+    print(f"Total Write: {io.write_bytes / (1024 ** 3):.2f} GB")
+    print(f"Read Count: {io.read_count}")
+    print(f"Write Count: {io.write_count}")
+
+# ======== OS Info =========
+def get_os_info():
+    print("\n=== OS Information ===")
+    print(f"OS: {platform.system()}")
+    print(f"Version: {platform.version()}")
+    print(f"Release: {platform.release()}")
+    print(f"Machine: {platform.machine()}")
+    print(f"Processor: {platform.processor()}")
+
+# ======== Boot Time =========
+def get_boot_time():
+    print("\n=== Boot Time ===")
+    print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(psutil.boot_time())))
+
+# ======== GPU Info =========
 def get_gpu_info():
-    """Detect and print GPU information from NVIDIA, Apple MPS, or AMD GPUs."""
     print("\n=== GPU Information ===")
-    # Check NVIDIA GPUs using GPUtil
-    try:
-        import GPUtil
+    if GPUtil:
         gpus = GPUtil.getGPUs()
-        if gpus:
-            for idx, gpu in enumerate(gpus):
-                print(f"GPU {idx}: {gpu.name}, VRAM: {gpu.memoryTotal} MB, Driver: {gpu.driver}")
-        else:
-            print("No NVIDIA GPUs found via GPUtil.")
-    except ImportError:
-        print("GPUtil not installed; skipping NVIDIA GPU check.")
+        for idx, gpu in enumerate(gpus):
+            print(f"GPU {idx}: {gpu.name}, VRAM: {gpu.memoryTotal} MB, Driver: {gpu.driver}")
+    else:
+        print("GPUtil not installed.")
 
-    # Check CUDA/MPS using PyTorch
-    try:
-        import torch
+    if torch:
         if torch.cuda.is_available():
-            n = torch.cuda.device_count()
-            print(f"NVIDIA CUDA device(s) available: {n}")
-            for idx in range(n):
-                print(f"CUDA GPU {idx}: {torch.cuda.get_device_name(idx)}")
+            for i in range(torch.cuda.device_count()):
+                print(f"CUDA GPU {i}: {torch.cuda.get_device_name(i)}")
         elif getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available():
             print("Apple MPS GPU is available.")
         else:
-            print("No CUDA or MPS devices detected by PyTorch.")
-    except ImportError:
-        print("PyTorch not installed; skipping advanced GPU check.")
+            print("No CUDA or MPS GPU available.")
+    else:
+        print("PyTorch not installed.")
 
-    # Basic AMD GPU detection on Linux via lspci
     try:
-        import subprocess
         result = subprocess.run(['lspci'], capture_output=True, text=True)
         if "AMD" in result.stdout or "Radeon" in result.stdout:
             print("AMD GPU detected (via lspci).")
     except Exception:
-        # Unable to detect AMD GPU on this system or lspci not available
         pass
-def print_cpu_clock_speed():
-    freq = psutil.cpu_freq()
-    if freq:
-        print(f"CPU Frequency: Current = {freq.current:.2f} MHz, Min = {freq.min:.2f} MHz, Max = {freq.max:.2f} MHz")
-    else:
-        print("CPU frequency information not available.")
 
-    # For per-core frequency (if supported)
-    freqs = psutil.cpu_freq(percpu=True)
-    if freqs:
-        for idx, core_freq in enumerate(freqs):
-            print(f"Core {idx}: {core_freq.current:.2f} MHz")
-    else:
-        print("Per-core CPU frequency information not available.")
-
+# ======== Main =========
 def main():
     get_cpu_info()
-    print_cpu_clock_speed()
-    get_memory_info()
-    get_cpu_usage()
+    get_ram_info()
+    get_swap_info()
+    get_disk_io()
     test_disk_speed()
+    get_os_info()
+    get_boot_time()
     get_gpu_info()
 
 if __name__ == "__main__":
